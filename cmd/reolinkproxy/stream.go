@@ -524,9 +524,6 @@ func (p *audioPublisher) processAAC(data []byte, timestamp mediaTimestamp, handl
 
 	duration := uint32(len(aus)) * mpeg4audio.SamplesPerAccessUnit //#nosec G115
 	baseTimestamp := p.nextTimestamp
-	if timestamp.Authoritative && hasExpectedTS {
-		baseTimestamp = expectedTS
-	}
 	baseTimestamp = p.timestampGuard.applyBaseToPackets(pkts, baseTimestamp, duration)
 	for _, pkt := range pkts {
 		pkt.Timestamp += baseTimestamp
@@ -599,9 +596,6 @@ func (p *audioPublisher) processADPCM(data []byte, timestamp mediaTimestamp, han
 
 	duration := uint32(len(pcm)) //#nosec G115
 	baseTimestamp := p.nextTimestamp
-	if timestamp.Authoritative && hasExpectedTS {
-		baseTimestamp = expectedTS
-	}
 	baseTimestamp = p.timestampGuard.applyBaseToPackets(pkts, baseTimestamp, duration)
 	for _, pkt := range pkts {
 		pkt.Timestamp += baseTimestamp
