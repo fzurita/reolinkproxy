@@ -428,8 +428,7 @@ func runStream(
 		nextReconnectAt  time.Time
 		reconnectDelay   = 50 * time.Millisecond
 		frameCount       int
-		videoTimestamps  timestampUnwrapper
-		videoRTP         rtpTimestampGuard
+		videoDecodeClk   monotonicClock
 		audioTimestamps  timestampUnwrapper
 	)
 
@@ -594,7 +593,12 @@ func runStream(
 					log.Printf("stream %s skipping video packet without timestamp", meta.name)
 					continue
 				}
-				continuousUS := videoTimestamps.unwrap(packet.TimestampMicrosecs)
+				// Use wall-clock DTS instead of camera PTS so that B-frames
+				// (which have intentionally non-monotonic PTS) do not cause
+				// FFmpeg's segment muxer to see non-monotonous DTS.
+				// The actual display order (PTS) is preserved in the H265/H264
+				// bitstream's Picture Order Count.
+				continuousUS := videoDecodeClk.now()
 
 				if videoFormat == nil {
 					meta.setVideoCodec(packet.Codec)
@@ -680,7 +684,6 @@ func runStream(
 
 				ts := rtpTimestampForClock(continuousUS, clockRate)
 				if !streamPaused {
-					ts = videoRTP.next(ts)
 					for _, pkt := range pkts {
 						pkt.Timestamp = ts
 						handler.writePacket(videoMedia, pkt)
@@ -794,10 +797,7 @@ func (g *rtpTimestampGuard) next(ts uint32) uint32 {
 		return ts
 	}
 	adjusted := ts + g.offset
-	if ts == g.last {
-		g.offset = g.last + 1 - ts
-		adjusted = g.last + 1
-	} else if !rtpTimestampAfter(adjusted, g.last) {
+	if !rtpTimestampAfter(adjusted, g.last) {
 		jumpBackward := uint32(int32(g.last - adjusted))
 		if jumpBackward > 90000 {
 			g.offset = g.last + 1 - ts
@@ -817,10 +817,6 @@ func (g *rtpTimestampGuard) applyBaseToPackets(pkts []*rtp.Packet, base uint32, 
 
 	sum := base + pkts[0].Timestamp //#nosec G115
 	first := sum + g.offset
-	if g.set && sum == g.last {
-		g.offset = 0
-		first = sum
-	}
 	if g.set && rtpTimestampBefore(first, g.last) {
 		jumpBackward := uint32(int32(g.last - first))
 		if jumpBackward > 90000 {

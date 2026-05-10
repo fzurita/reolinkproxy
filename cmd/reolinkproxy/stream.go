@@ -875,6 +875,24 @@ func rtpTimestampForClock(microseconds uint64, clockRate int) uint32 {
 	return uint32(seconds*uint64(clockRate) + (rem*uint64(clockRate))/1_000_000) //#nosec G115
 }
 
+// monotonicClock returns a wall-clock microsecond timestamp that is guaranteed
+// to be strictly greater than the previous value. This is used for video DTS
+// so that B-frame PTS non-monotonicities in the camera stream do not propagate
+// to the RTP output and confuse FFmpeg's segment muxer.
+type monotonicClock struct {
+	last uint64
+}
+
+func (c *monotonicClock) now() uint64 {
+	t := uint64(time.Now().UnixMicro()) //#nosec G115
+	if t <= c.last {
+		c.last++
+		return c.last
+	}
+	c.last = t
+	return t
+}
+
 func rtpTimestampForMediaTime(timestamp mediaTimestamp, clockRate int) (uint32, bool) {
 	if !timestamp.Valid {
 		return 0, false
